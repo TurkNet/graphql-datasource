@@ -1,158 +1,112 @@
-# GraphQL Data Source
+# Grafana data source plugin template
 
-![CI](https://github.com/fifemon/graphql-datasource/workflows/CI/badge.svg)
+This template is a starting point for building a Data Source Plugin for Grafana.
 
-[Grafana](https://grafana.com) datasource plugin that provides access to a
-GraphQL API for numerical timeseries data, general/tabular data,
-annotations, and dashboard variables.
+## What are Grafana data source plugins?
 
-- The GraphQL query must be structured so that the data of interest is returned
-  under the configurable data path (default `data`) in the response. If the
-  object at that path is an array it will be iterated over, with each object added
-  as a row in the data frame, otherwise the result object will be the only row.
-  - Can be separated by commas to use multiple data paths
-- Timeseries data must include a timestamp field under the data path, default
-  `Time`, in [ISO8601](https://momentjs.com/docs/#/parsing/string/) or a
-  configurable [custom
-  format](https://momentjs.com/docs/#/parsing/string-format/).
-- Nested types will be flattened into dot-delimited fields.
-- Grafana variables should be substituted directly in the query (instead of
-  using GraphQL variables). The dashboard time ranges are available in the
-  [global variables](https://grafana.com/docs/grafana/latest/variables/variable-types/global-variables/)
-  `$__from` and `$__to` as millisecond epoch (or in whatever format is needed by the API
-  in Grafana 7.1.2 or later).
-- Group by can be used to group elements into multiple data points.
-- Alias by is used to alter the name of the field displayed in the legend.
-  `$field_<field.name>` is substituted with the values of the field and
-  `$fieldName` is substituted with the name of the field.
+Grafana supports a wide range of data sources, including Prometheus, MySQL, and even Datadog. There’s a good chance you can already visualize metrics from the systems you have set up. In some cases, though, you already have an in-house metrics solution that you’d like to add to your Grafana dashboards. Grafana Data Source Plugins enables integrating such solutions with Grafana.
 
-# Screenshots
+## Getting started
 
-![DeutscheBahn Arrivals Table](https://user-images.githubusercontent.com/1627510/90258294-f1bf2b00-de0d-11ea-8768-34b4ef37c125.png)
-![DeutscheBahn Arrivals Annotations](https://user-images.githubusercontent.com/1627510/90258316-f8e63900-de0d-11ea-91eb-d40532d5b768.png)
-![GitHub Security Advisories](https://user-images.githubusercontent.com/1627510/90258319-fbe12980-de0d-11ea-8ea2-c97bbc398aa4.png)
-![DeutscheBahn Station Variable](https://user-images.githubusercontent.com/1627510/110505565-e1c9aa00-80c3-11eb-85bb-10e5471fb151.png)
+### Frontend
 
-# Examples
+1. Install dependencies
 
-Below are some example queries demonstrating how to use the plugin, using the
-[FIFEMon GraphQL test source
-server](https://github.com/fifemon/graphql-test-source/), which also includes a
-[dashboard](https://raw.githubusercontent.com/fifemon/graphql-test-source/master/doc/graphql-test-dashboard.json)
-demonstrating these queries.
+   ```bash
+   npm install
+   ```
 
-## Basic timeseries
+2. Build plugin in development mode and run in watch mode
 
-```graphql
-query {
-  data: simple_series(from: "${__from:date:iso}", to: "${__to:date:iso}", interval_ms: $__interval_ms) {
-    Time: timestamp
-    value
-  }
-}
-```
+   ```bash
+   npm run dev
+   ```
 
-Note the use of the global `$__from` and `$__to` variables to insert the
-dashboard time range into the query and the use of `$__interval_ms` to specify
-the appropriate time interval for the graph.
+3. Build plugin in production mode
 
-## Custom time format
+   ```bash
+   npm run build
+   ```
 
-```graphql
-query {
-  simple_series(
-    from: "${__from:date:iso}"
-    to: "${__to:date:iso}"
-    interval_ms: $__interval_ms
-    format: "MM.dd.uuuu HHmmss"
-  ) {
-    timestamp
-    value
-  }
-}
-```
+4. Run the tests (using Jest)
 
-- Data path: `simple_series`
-- Time path: `timestamp`
-- Time format: `MM.DD.YYYY HHmmss`
+   ```bash
+   # Runs the tests and watches for changes, requires git init first
+   npm run test
 
-## Alias and group by
+   # Exits after running all the tests
+   npm run test:ci
+   ```
 
-```graphql
-query {
-  complex_series(from: "${__from:date:iso}", to: "${__to:date:iso}", interval_ms: $__interval_ms) {
-    time {
-      timestamp
-    }
-    value
-    group {
-      id
-      name
-    }
-  }
-}
-```
+5. Spin up a Grafana instance and run the plugin inside it (using Docker)
 
-- Data path: `complex_series`
-- Time path: `time.timestamp`
-- Group by: `group.id`
-- Alias by: `$field_group.name`
+   ```bash
+   npm run server
+   ```
 
-In the above example, "Group by" and "Alias by" are defined. "Group by" allows
-you to split up an array of data into multiple data points. "Alias by" is used
-as the name of the data point. You can make alias use text from the query or
-even the field name by using `$field_<your.field.name>` for the value of the
-field, or `$fieldName` for the name of the field. If `$fieldName` was used, it
-would be replaced by "value" because that's the name of the field. If
-`$field_group.name` was used, it would be replaced with the value
-of `name`. Using `$fieldName` can be useful if you're querying multiple
-numeric fields that you want displayed in your graph.
+6. Run the E2E tests (using Cypress)
 
-## Annotations
+   ```bash
+   # Spins up a Grafana instance first that we tests against
+   npm run server
 
-```graphql
-query {
-  events(from: "${__from:date:iso}", to: "${__to:date:iso}", end: true) {
-    timestamp
-    end_timestamp
-    name
-    description
-    tags
-  }
-}
-```
+   # Starts the tests
+   npm run e2e
+   ```
 
-- Data path: `events`
-- Time path: `timestamp`
-- End time path: `end_timestamp`
-- Title: `$field_name`
-- Text: `$field_description`
-- Tags: `tag1, tag2`
+7. Run the linter
 
-The above annotation example is similar to regular queries. You are able to
-define a data path, time path, and time format. Similar to the last example, you
-can also substitute values into the title, text, and tags by using
-`$field_<field name>`. Tags are separated by commas. The above example has two
-tags: "tag1" and "tag2".
+   ```bash
+   npm run lint
 
-If the optional end time field is defined and present, the annotation will be
-shown over a period of time.
+   # or
 
-## Dashboard Variable Queries
+   npm run lint:fix
+   ```
 
-Dashboard variables can be populated by a GraphQL query that returns an array of
-objects. If the objects contain both `__text` and `__value` fields then they
-will be used (the `__text` field will be displayed, the `__value` field will be
-used in substitutions). Otherwise the values of all fields will be appended to
-the variable value list.
+# Distributing your plugin
 
-```graphql
-query {
-  groups {
-    __value: id
-    __text: name
-  }
-}
-```
+When distributing a Grafana plugin either within the community or privately the plugin must be signed so the Grafana application can verify its authenticity. This can be done with the `@grafana/sign-plugin` package.
 
-- Data path: `groups`
+_Note: It's not necessary to sign a plugin during development. The docker development environment that is scaffolded with `@grafana/create-plugin` caters for running the plugin without a signature._
+
+## Initial steps
+
+Before signing a plugin please read the Grafana [plugin publishing and signing criteria](https://grafana.com/legal/plugins/#plugin-publishing-and-signing-criteria) documentation carefully.
+
+`@grafana/create-plugin` has added the necessary commands and workflows to make signing and distributing a plugin via the grafana plugins catalog as straightforward as possible.
+
+Before signing a plugin for the first time please consult the Grafana [plugin signature levels](https://grafana.com/legal/plugins/#what-are-the-different-classifications-of-plugins) documentation to understand the differences between the types of signature level.
+
+1. Create a [Grafana Cloud account](https://grafana.com/signup).
+2. Make sure that the first part of the plugin ID matches the slug of your Grafana Cloud account.
+   - _You can find the plugin ID in the `plugin.json` file inside your plugin directory. For example, if your account slug is `acmecorp`, you need to prefix the plugin ID with `acmecorp-`._
+3. Create a Grafana Cloud API key with the `PluginPublisher` role.
+4. Keep a record of this API key as it will be required for signing a plugin
+
+## Signing a plugin
+
+### Using Github actions release workflow
+
+If the plugin is using the github actions supplied with `@grafana/create-plugin` signing a plugin is included out of the box. The [release workflow](./.github/workflows/release.yml) can prepare everything to make submitting your plugin to Grafana as easy as possible. Before being able to sign the plugin however a secret needs adding to the Github repository.
+
+1. Please navigate to "settings > secrets > actions" within your repo to create secrets.
+2. Click "New repository secret"
+3. Name the secret "GRAFANA_API_KEY"
+4. Paste your Grafana Cloud API key in the Secret field
+5. Click "Add secret"
+
+#### Push a version tag
+
+To trigger the workflow we need to push a version tag to github. This can be achieved with the following steps:
+
+1. Run `npm version <major|minor|patch>`
+2. Run `git push origin main --follow-tags`
+
+## Learn more
+
+Below you can find source code for existing app plugins and other related documentation.
+
+- [Basic data source plugin example](https://github.com/grafana/grafana-plugin-examples/tree/master/examples/datasource-basic#readme)
+- [`plugin.json` documentation](https://grafana.com/developers/plugin-tools/reference-plugin-json)
+- [How to sign a plugin?](https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin)
