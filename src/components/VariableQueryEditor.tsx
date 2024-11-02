@@ -1,13 +1,13 @@
 import { QueryField } from '@grafana/ui';
 import React, { useState } from 'react';
-import { MyQuery } from './types';
+import { MyQuery } from '../types';
 
 interface VariableQueryProps {
   query: MyQuery;
   onChange: (query: MyQuery, definition: string) => void;
 }
 
-export const VariableQueryEditor: React.FC<VariableQueryProps> = ({ onChange, query }) => {
+const VariableQueryEditor: React.FC<VariableQueryProps> = ({ onChange, query }) => {
   const [state, setState] = useState(query);
 
   const saveQuery = () => {
@@ -45,3 +45,5 @@ export const VariableQueryEditor: React.FC<VariableQueryProps> = ({ onChange, qu
     </>
   );
 };
+
+export {VariableQueryEditor}

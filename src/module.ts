@@ -1,13 +1,11 @@
 import { DataSourcePlugin } from '@grafana/data';
-import { DataSource } from './DataSource';
-import { ConfigEditor } from './ConfigEditor';
-import { QueryEditor } from './QueryEditor';
+import { ConfigEditor } from './components/ConfigEditor';
+import { QueryEditor } from './components/QueryEditor';
 import { MyQuery, MyDataSourceOptions } from './types';
-import { GraphQLAnnotationsQueryCtrl } from './GraphQLAnnotationsQueryCtrl';
-import { VariableQueryEditor } from './VariableQueryEditor';
+import { MyDataSource } from './datasource';
 
-export const plugin = new DataSourcePlugin<DataSource, MyQuery, MyDataSourceOptions>(DataSource)
-  .setConfigEditor(ConfigEditor)
-  .setAnnotationQueryCtrl(GraphQLAnnotationsQueryCtrl)
-  .setQueryEditor(QueryEditor)
-  .setVariableQueryEditor(VariableQueryEditor);
+export const plugin = new DataSourcePlugin<MyDataSource, MyQuery, MyDataSourceOptions>(MyDataSource)
+.setConfigEditor(ConfigEditor)
+.setQueryEditor(QueryEditor);
+
+console.log(plugin);

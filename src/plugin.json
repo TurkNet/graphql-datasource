@@ -1,36 +1,26 @@
 {
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
   "type": "datasource",
-  "name": "GraphQL",
-  "id": "fifemon-graphql-datasource",
+  "name": "fermilab-graphql-datasource",
+  "id": "fermilab-graphql-datasource",
   "metrics": true,
-  "annotations": true,
-
   "info": {
-    "description": "GraphQL Data Source",
+    "description": "Generic GraphQL data source",
     "author": {
-      "name": "Kevin Retzke"
+      "name": "Fermilab"
     },
-    "keywords": ["GraphQL"],
+    "keywords": ["datasource"],
     "logos": {
       "small": "img/logo.svg",
       "large": "img/logo.svg"
     },
-    "links": [
-      { "name": "Website", "url": "https://github.com/fifemon/graphql-datasource" },
-      { "name": "License", "url": "https://github.com/fifemon/graphql-datasource/blob/master/LICENSE" }
-    ],
-    "screenshots": [
-      { "name": "DeutscheBahn Arrivals", "path": "img/db_arrivals.png"},
-      { "name": "DeutscheBahn Arrivals Annotations", "path": "img/db_arrivals_annotations.png"},
-      { "name": "GitHub Security Advisories", "path": "img/github_security_advisories.png"}
-    ],
+    "links": [],
+    "screenshots": [],
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
-
   "dependencies": {
-    "grafanaVersion": "7.x.x",
-    "grafanaDependency": ">=7.0.0",
+    "grafanaDependency": ">=10.0.3",
     "plugins": []
   }
 }

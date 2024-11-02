@@ -8,15 +8,25 @@
     <div class="gf-form">
       <textarea type="text" class="gf-form-input" ng-model=
       'ctrl.annotation.queryText' placeholder="GraphQL Query">
-query {
-    data:submissions(user:"$user", from:"$timeFrom", to:"$timeTo"){
-        Time:submitTime
-        idle running completed
-    }
-}
+
+    query {
+        data:submissions(user:"$user", from:"$timeFrom", to:"$timeTo"){
+            Time:submitTime
+            idle running completed
+        }
+      }
 </textarea>
     </div>
-
+    <div className="gf-form">
+      <span className="gf-form-label width-10">Data Path</span>
+      <input 
+        name="dataPath"
+        className="gf-form-input"
+        onBlur={saveQuery}
+        onChange={handleChange}
+        value={state.dataPath}
+      />
+    </div>
     <div class="gf-form">
       <label class="gf-form-label width-7" title=
       "Data path (comma separated for multiple data paths)">Data

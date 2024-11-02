@@ -1,7 +1,5 @@
 import defaults from 'lodash/defaults';
-
 import {
-  AnnotationEvent,
   DataQueryRequest,
   DataQueryResponse,
   DataSourceApi,
@@ -10,10 +8,13 @@ import {
   ScopedVars,
   TimeRange,
   dateTime,
-  MutableDataFrame,
   FieldType,
   DataFrame,
+  MutableDataFrame,
+  AnnotationEvent,
+  TestDataSourceResponse
 } from '@grafana/data';
+
 
 import {
   MyQuery,
@@ -22,25 +23,53 @@ import {
   MyVariableQuery,
   MultiValueVariable,
   TextValuePair,
+  MyDataSourcePluginComponents,
+  TestResponse
 } from './types';
-import { getTemplateSrv } from '@grafana/runtime';
+
 import _ from 'lodash';
 import { flatten, isRFC3339_ISO6801 } from './util';
-
+import { getTemplateSrv } from '@grafana/runtime';
 const supportedVariableTypes = ['constant', 'custom', 'query', 'textbox'];
 
-export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
+function replaceTemplateVariables(queryText: string | undefined, variables: any): string {
+  let replacedQuery = queryText? queryText : "";
+  // Loop over all variables and replace them in the query text
+  Object.keys(variables).forEach(key => {
+      const value = variables[key];
+      replacedQuery = replacedQuery.replace(`\$\{${key}\}`, value.text);
+  });
+  return replacedQuery;
+}
+
+
+export class MyDataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
   basicAuth: string | undefined;
   withCredentials: boolean | undefined;
   url: string | undefined;
-
+  uid: string;
+  id: number;
+  // Implement these helper methods based on your data structure and requirements
+  getDataPathArray(dataPath: string): string[] {
+    // Extract data paths from the provided path string
+    return dataPath.split(',').map(path => path.trim());
+  }
+  
+ 
+  
   constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>, private backendSrv: any) {
     super(instanceSettings);
     this.basicAuth = instanceSettings.basicAuth;
     this.withCredentials = instanceSettings.withCredentials;
     this.url = instanceSettings.url;
+    this.uid = instanceSettings.uid;
+    this.id = instanceSettings.id;
+    this.components = new MyDataSourcePluginComponents()
   }
+    
+  
 
+    
   private request(data: string) {
     const options: any = {
       url: this.url,
@@ -63,6 +92,7 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
   }
 
   private postQuery(query: Partial<MyQuery>, payload: string) {
+    console.log(payload)
     return this.request(payload)
       .then((results: any) => {
         return { query, results };
@@ -71,25 +101,29 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
         if (err.data && err.data.error) {
           throw {
             message: 'GraphQL error: ' + err.data.error.reason,
-            error: err.data.error,
+            error: 'GraphQL error: ' + err.data.error
           };
         }
 
-        throw err;
+        throw 'GraphQL error: ' + err.data.error;
       });
   }
 
   private createQuery(query: MyQuery, range: TimeRange | undefined, scopedVars: ScopedVars | undefined = undefined) {
-    let payload = getTemplateSrv().replace(query.queryText, {
+    let payload = replaceTemplateVariables(query.queryText, {
       ...scopedVars,
       timeFrom: { text: 'from', value: range?.from.valueOf() },
       timeTo: { text: 'to', value: range?.to.valueOf() },
     });
-
     //console.log(payload);
     return this.postQuery(query, payload);
   }
-  private static getDocs(resultsData: any, dataPath: string): any[] {
+  static getDocs(frame: DataFrame, path: string): any[] {
+    // Extract documents from the DataFrame based on the path
+    // This needs to be implemented based on how your data is structured within the frame
+    return [];
+  }
+  private getDocs(resultsData: any, dataPath: string): any[] {
     if (!resultsData) {
       throw 'resultsData was null or undefined';
     }
@@ -124,114 +158,16 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
     }
     return docs;
   }
-  private static getDataPathArray(dataPathString: string): string[] {
-    const dataPathArray: string[] = [];
-    for (const dataPath of dataPathString.split(',')) {
-      const trimmed = dataPath.trim();
-      if (trimmed) {
-        dataPathArray.push(trimmed);
-      }
-    }
-    if (!dataPathArray) {
-      throw 'data path is empty!';
-    }
-    return dataPathArray;
-  }
 
-  async query(options: DataQueryRequest<MyQuery>): Promise<DataQueryResponse> {
-    return Promise.all(
-      options.targets.map((target) => {
-        return this.createQuery(defaults(target, defaultQuery), options.range, options.scopedVars);
-      })
-    ).then((results: any) => {
-      const dataFrameArray: DataFrame[] = [];
-      for (let res of results) {
-        const dataPathArray: string[] = DataSource.getDataPathArray(res.query.dataPath);
-        const { timePath, timeFormat, groupBy, aliasBy } = res.query;
-        const split = groupBy.split(',');
-        const groupByList: string[] = [];
-        for (const element of split) {
-          const trimmed = element.trim();
-          if (trimmed) {
-            groupByList.push(trimmed);
-          }
-        }
-        for (const dataPath of dataPathArray) {
-          const docs: any[] = DataSource.getDocs(res.results.data, dataPath);
-
-          const dataFrameMap = new Map<string, MutableDataFrame>();
-          for (const doc of docs) {
-            if (timePath in doc) {
-              doc[timePath] = dateTime(doc[timePath], timeFormat);
-            }
-            const identifiers: string[] = [];
-            for (const groupByElement of groupByList) {
-              identifiers.push(doc[groupByElement]);
-            }
-            const identifiersString = identifiers.toString();
-            let dataFrame = dataFrameMap.get(identifiersString);
-            if (!dataFrame) {
-              // we haven't initialized the dataFrame for this specific identifier that we group by yet
-              dataFrame = new MutableDataFrame({ fields: [] });
-              const generalReplaceObject: any = {};
-              for (const fieldName in doc) {
-                generalReplaceObject['field_' + fieldName] = doc[fieldName];
-              }
-              for (const fieldName in doc) {
-                let t: FieldType = FieldType.string;
-                if (fieldName === timePath || isRFC3339_ISO6801(String(doc[fieldName]))) {
-                  t = FieldType.time;
-                } else if (_.isNumber(doc[fieldName])) {
-                  t = FieldType.number;
-                }
-                let title;
-                if (identifiers.length !== 0) {
-                  // if we have any identifiers
-                  title = identifiersString + '_' + fieldName;
-                } else {
-                  title = fieldName;
-                }
-                if (aliasBy) {
-                  title = aliasBy;
-                  const replaceObject = { ...generalReplaceObject };
-                  replaceObject['fieldName'] = fieldName;
-                  for (const replaceKey in replaceObject) {
-                    const replaceValue = replaceObject[replaceKey];
-                    const regex = new RegExp('\\$' + replaceKey, 'g');
-                    title = title.replace(regex, replaceValue);
-                  }
-                  title = getTemplateSrv().replace(title, options.scopedVars);
-                }
-                dataFrame.addField({
-                  name: fieldName,
-                  type: t,
-                  config: { displayName: title },
-                }).parse = (v: any) => {
-                  return v || '';
-                };
-              }
-              dataFrameMap.set(identifiersString, dataFrame);
-            }
-
-            dataFrame.add(doc);
-          }
-          for (const dataFrame of dataFrameMap.values()) {
-            dataFrameArray.push(dataFrame);
-          }
-        }
-      }
-      return { data: dataFrameArray };
-    });
-  }
-  annotationQuery(options: any): Promise<AnnotationEvent[]> {
+   myAnnotationsQuery(options: any){
     const query = defaults(options.annotation, defaultQuery);
     return Promise.all([this.createQuery(query, options.range)]).then((results: any) => {
       const r: AnnotationEvent[] = [];
       for (const res of results) {
         const { timePath, endTimePath, timeFormat } = res.query;
-        const dataPathArray: string[] = DataSource.getDataPathArray(res.query.dataPath);
+        const dataPathArray: string[] = MyDataSource.getDataPathArray(res.query.dataPath);
         for (const dataPath of dataPathArray) {
-          const docs: any[] = DataSource.getDocs(res.results.data, dataPath);
+          const docs: any[] = this.getDocs(res.results.data, dataPath);
           for (const doc of docs) {
             const annotation: AnnotationEvent = {};
             if (timePath in doc) {
@@ -270,33 +206,136 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
       return r;
     });
   }
-
-  testDatasource() {
-    const q = `{
-      __schema{
-        queryType{name}
+  private static getDataPathArray(dataPathString: string): string[] {
+    const dataPathArray: string[] = [];
+    for (const dataPath of dataPathString.split(',')) {
+      const trimmed = dataPath.trim();
+      if (trimmed) {
+        dataPathArray.push(trimmed);
       }
-    }`;
+    }
+    if (!dataPathArray) {
+      throw 'data path is empty!';
+    }
+    return dataPathArray;
+  }
+
+  async query(options: DataQueryRequest<MyQuery>): Promise<DataQueryResponse> {
+    return Promise.all(
+      options.targets.map((target) => {
+        return this.createQuery(defaults(target, defaultQuery), options.range, options.scopedVars);
+      })
+    ).then((results: any) => {
+      const dataFrameArray: DataFrame[] = [];
+      for (let res of results) {
+        const dataPathArray: string[] = this.getDataPathArray(res.query.dataPath);
+        const { timePath, timeFormat, groupBy, aliasBy } = res.query;
+        const split = groupBy.split(',');
+        const groupByList: string[] = [];
+        for (const element of split) {
+          const trimmed = element.trim();
+          if (trimmed) {
+            groupByList.push(trimmed);
+          }
+        }
+        for (const dataPath of dataPathArray) {
+          const docs: any[] = this.getDocs(res.results.data, dataPath);
+
+          const dataFrameMap = new Map<string, DataFrame>();
+          for (const doc of docs) {
+            if (timePath in doc) {
+              doc[timePath] = dateTime(doc[timePath], timeFormat);
+            }
+            const identifiers: string[] = [];
+            for (const groupByElement of groupByList) {
+              identifiers.push(doc[groupByElement]);
+            }
+            const identifiersString = identifiers.toString();
+            
+            let dataFrame = dataFrameMap.get(identifiersString);
+
+            if (!dataFrame) {
+              // we haven't initialized the dataFrame for this specific identifier that we group by yet
+              let dataFrame: DataFrame =  new MutableDataFrame({ fields:[] });
+              const generalReplaceObject: any = {};
+              for (const fieldName in doc) {
+                generalReplaceObject['field_' + fieldName] = doc[fieldName];
+              }
+              for (const fieldName in doc) {
+                let t: FieldType = FieldType.string;
+                if (fieldName === timePath || isRFC3339_ISO6801(String(doc[fieldName]))) {
+                  t = FieldType.time;
+                } else if (_.isNumber(doc[fieldName])) {
+                  t = FieldType.number;
+                }
+                let title;
+                if (identifiers.length !== 0) {
+                  // if we have any identifiers
+                  title = identifiersString + '_' + fieldName;
+                } else {
+                  title = fieldName;
+                }
+                if (aliasBy) {
+                  title = aliasBy;
+                  const replaceObject = { ...generalReplaceObject };
+                  replaceObject['fieldName'] = fieldName;
+                  for (const replaceKey in replaceObject) {
+                    const replaceValue = replaceObject[replaceKey];
+                    const regex = new RegExp('\\$' + replaceKey, 'g');
+                    title = title.replace(regex, replaceValue);
+                  }
+                  title = replaceTemplateVariables(title, options.scopedVars);
+                }
+
+                
+                dataFrame.fields.push({
+                  name: fieldName,
+                  type: t,
+                  config: { displayName: title },
+                  values:[doc]
+                })
+                
+              }
+              dataFrameMap.set(identifiersString, dataFrame);
+            }
+            else{
+              dataFrame.fields.values.apply(doc);
+            }
+          }
+          for (const dataFrame of dataFrameMap.values()) {
+            dataFrameArray.push(dataFrame);
+          }
+        }
+      }
+      return { data: dataFrameArray };
+    });
+  }
+  
+
+ public testDatasource(): Promise<TestDataSourceResponse> {
+    console.log("here");
+    alert("Here");
+    const q = "{__schema{queryType{name}}}";
+    let response = new TestResponse();
     return this.postQuery(defaultQuery, q).then(
       (res: any) => {
         if (res.errors) {
+          response.setError(res.errors);
           console.log(res.errors);
-          return {
-            status: 'error',
-            message: 'GraphQL Error: ' + res.errors[0].message,
-          };
+          response.setStatus('error');
+          response.setMessage('GraphQL Error: ' + res.errors[0].message);
+          return response;
         }
-        return {
-          status: 'success',
-          message: 'Success',
-        };
+        response.setStatus('success');
+        response.setMessage('Success');
+        return response;
       },
       (err: any) => {
         console.log(err);
-        return {
-          status: 'error',
-          message: 'HTTP Response ' + err.status + ': ' + err.statusText,
-        };
+        response.setError(err);
+        response.setStatus('error');
+        response.setMessage('HTTP Response ' + err.status + ': ' + err.statusText);
+        return response;
       }
     );
   }
@@ -307,11 +346,11 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
     query = defaults(query, defaultQuery);
 
     let payload = query.queryText;
-    payload = getTemplateSrv().replace(payload, { ...this.getVariables });
+    payload = replaceTemplateVariables(payload, { ...this.getVariables });
 
     const response = await this.postQuery(query, payload);
 
-    const docs: any[] = DataSource.getDocs(response.results.data, query.dataPath);
+    const docs: any[] = this.getDocs(response.results.data, query.dataPath);
 
     for (const doc of docs) {
       if ('__text' in doc && '__value' in doc) {
@@ -327,11 +366,10 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
   }
 
   getVariables() {
-    const variables: { [id: string]: TextValuePair } = {};
+    const variables: {[id: string]: TextValuePair } = {};
     Object.values(getTemplateSrv().getVariables()).forEach((variable) => {
       if (!supportedVariableTypes.includes(variable.type)) {
         console.warn(`Variable of type "${variable.type}" is not supported`);
-
         return;
       }
 
@@ -345,13 +383,11 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
           variableValue = supportedVariable.allValue;
         }
       }
-
       variables[supportedVariable.id] = {
         text: supportedVariable.current.text,
         value: variableValue,
       };
     });
-
     return variables;
   }
 }
